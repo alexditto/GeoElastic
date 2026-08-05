@@ -21,14 +21,13 @@ Application (run from repo root):
 - `go build ./...` — build all packages.
 - `go run ./cmd/api` — run the API server (reads config from `.env`, listens on `:8080` by
   default).
+- `go run ./cmd/migrate` — create/update the Elasticsearch `businesses` index and alias from the
+  mapping in `internal/store/mappings/`. Safe to re-run (idempotent).
 - `go build -o /tmp/geoelastic-api ./cmd/api` — build a standalone binary, useful for a quick
   manual smoke test (`./that-binary & curl localhost:8080/health; kill %1`).
 - `gofmt -l .` — list files needing formatting; `gofmt -w <file>` to fix.
 - `go mod tidy` — sync `go.mod`/`go.sum` after adding/removing imports.
 - No test suite yet.
-
-Note: on this machine, `go` lives at `/usr/local/go/bin/go` and is not on `PATH` — prefix commands
-with `export PATH="/usr/local/go/bin:$PATH"` or use the full path if plain `go` isn't found.
 
 Local Elastic Stack (run from `elastic-start-local/`):
 
@@ -49,14 +48,29 @@ is hand-rolled, not enforced by tooling:
 - `cmd/api/main.go` — entry point: loads config, constructs the Elasticsearch client, wires up
   routes (stdlib `net/http`, using Go 1.22+'s method+pattern mux syntax, e.g. `"GET /health"`),
   starts the server.
+- `cmd/migrate/main.go` — entry point for `EnsureBusinessIndex` (see below); no generic migration
+  runner exists, just this one explicit command.
 - `internal/config` — reads settings from environment variables (`.env` loaded via
   `github.com/joho/godotenv`, since unlike Laravel, Go does not auto-load `.env` files).
-- `internal/model` — plain structs (e.g. `Business`, `GeoPoint`). These are just data, not
-  Active Record-style objects — there's no `business.Save()`; persistence logic lives in `store`.
+- `internal/model` — plain structs (e.g. `Business`, `Address`, `OpeningHours`, `GeoPoint`).
+  These are just data, not Active Record-style objects — there's no `business.Save()`;
+  persistence logic lives in `store`. `Address` is embedded directly in `Business` rather than
+  referenced by ID: Elasticsearch has no real joins, so a 1:1 relationship like this is
+  denormalized into one document instead of split across a separate index.
 - `internal/store` — hand-written code that talks to Elasticsearch via
   `github.com/elastic/go-elasticsearch/v9` (matched to the local server's major version, 9.x).
   This is the layer Eloquent's query builder would cover in Laravel, but there's no ES-flavored
   Go ORM, so queries are built and issued by hand here.
+  - `internal/store/mappings/businesses_v1.json` — the mapping for the `businesses` index,
+    `//go:embed`-ed into the binary. Elasticsearch mappings are largely immutable once created
+    (most field type changes can't be applied in place), so the convention here is: a mapping
+    change means authoring `businesses_v2.json`, reindexing into a new `businesses_v2` index, and
+    swapping the `businesses` **alias** to point at it — never editing `businesses_v1` in place.
+    Application code should always query the `businesses` alias, never a versioned index name
+    directly.
+  - `internal/store/index.go` — `EnsureBusinessIndex` creates the versioned index + alias if
+    they don't already exist (idempotent; this is the closest thing this repo has to a Laravel
+    migration).
 - `internal/handler` — HTTP handlers (Laravel's "controllers," different name): parse the
   request, call into `store`/future service logic, write the response.
 

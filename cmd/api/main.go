@@ -22,6 +22,9 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.Handle("GET /health", &handler.HealthHandler{Store: es})
+	mux.Handle("GET /businesses", &handler.GetAllBusinessesHandler{Store: es})
+	mux.Handle("POST /businesses", &handler.CreateBusinessHandler{Store: es})
+	mux.Handle("GET /business/{id}", &handler.GetBusinessByIDHandler{Store: es})
 
 	addr := ":" + cfg.ServerPort
 	log.Printf("listening on %s", addr)

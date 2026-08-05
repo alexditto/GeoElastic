@@ -1,0 +1,46 @@
+{
+  "mappings": {
+    "properties": {
+      "name": {
+        "type": "text",
+        "fields": {
+          "keyword": { "type": "keyword" }
+        }
+      },
+      "display_name": {
+        "type": "text",
+        "fields": {
+          "keyword": { "type": "keyword" }
+        }
+      },
+      "business_status": { "type": "keyword" },
+      "primary_type": { "type": "keyword" },
+      "address": {
+        "properties": {
+          "street": {
+            "type": "text",
+            "fields": {
+              "keyword": { "type": "keyword" }
+            }
+          },
+          "city": { "type": "keyword" },
+          "state": { "type": "keyword" },
+          "zip": { "type": "keyword" }
+        }
+      },
+      "location": { "type": "geo_point" },
+      "phone_number": { "type": "keyword" },
+      "square_footage": { "type": "integer" },
+      "rating": { "type": "float" },
+      "opening_date": { "type": "date" },
+      "opening_hours": {
+        "type": "nested",
+        "properties": {
+          "day": { "type": "keyword" },
+          "open": { "type": "keyword" },
+          "close": { "type": "keyword" }
+        }
+      }
+    }
+  }
+}
