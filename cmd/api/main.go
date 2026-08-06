@@ -6,6 +6,7 @@ import (
 
 	"geoelastic/internal/config"
 	"geoelastic/internal/handler"
+	"geoelastic/internal/service"
 	"geoelastic/internal/store"
 )
 
@@ -20,11 +21,14 @@ func main() {
 		log.Fatalf("connecting to elasticsearch: %v", err)
 	}
 
+	matcher := &service.BusinessMatcher{Store: es}
+
 	mux := http.NewServeMux()
 	mux.Handle("GET /health", &handler.HealthHandler{Store: es})
 	mux.Handle("GET /businesses", &handler.GetAllBusinessesHandler{Store: es})
 	mux.Handle("POST /businesses", &handler.CreateBusinessHandler{Store: es})
 	mux.Handle("GET /business/{id}", &handler.GetBusinessByIDHandler{Store: es})
+	mux.Handle("POST /businesses/match", &handler.MatchHandler{Matcher: matcher})
 
 	addr := ":" + cfg.ServerPort
 	log.Printf("listening on %s", addr)
