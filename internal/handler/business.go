@@ -69,6 +69,7 @@ func (h *CreateBusinessHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 		json.NewEncoder(w).Encode(map[string]string{"error": "invalid JSON body: " + err.Error()})
 		return
 	}
+	business.ID = "" // the ID is always Elasticsearch-assigned; ignore any client-supplied value
 
 	id, err := h.Store.CreateBusiness(r.Context(), business)
 	if err != nil {
