@@ -62,10 +62,10 @@ func (m *BusinessMatcher) Match(ctx context.Context, req model.MatchRequest) (Ma
 		return MatchResponse{Match: "none", Businesses: []ScoredBusiness{}}, nil
 	}
 
-	topScore := fuzzy[0].Score // Elasticsearch already sorts hits by score, descending.
+
 	businesses := make([]ScoredBusiness, len(fuzzy))
 	for i, hit := range fuzzy {
-		businesses[i] = ScoredBusiness{Business: hit.Business, Score: hit.Score / topScore}
+		businesses[i] = ScoredBusiness{Business: hit.Business, Score: hit.Score}
 	}
 
 	return MatchResponse{Match: "fuzzy", Businesses: businesses}, nil

@@ -30,6 +30,7 @@
       },
       "location": { "type": "geo_point" },
       "phone_number": { "type": "keyword" },
+      "phone_number_local": { "type": "keyword" },
       "square_footage": { "type": "integer" },
       "rating": { "type": "float" },
       "opening_date": { "type": "date" },

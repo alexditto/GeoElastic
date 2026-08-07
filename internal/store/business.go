@@ -7,12 +7,19 @@ import (
 	"fmt"
 
 	"geoelastic/internal/model"
+	"geoelastic/internal/phone"
 )
 
 const (
 	exactSearchSize = 10 // enough to detect "more than one" without a real page size
 	fuzzySearchSize = 5
 	geoBoostPivot   = "5km" // distance at which the location proximity boost is half strength
+
+	// phoneLocalBoost weights a matching phone_number_local (area code
+	// excluded) far above the other fuzzy "should" clauses — two businesses
+	// sharing a central office code + line number is a much stronger match
+	// signal than a fuzzy hit on name/address text.
+	phoneLocalBoost = 8.0
 )
 
 // BusinessHit pairs a Business with the Elasticsearch relevance score it
@@ -112,9 +119,21 @@ func (s *ElasticsearchStore) GetBusinessByID(ctx context.Context, id string) (*m
 }
 
 // CreateBusiness indexes a new business document into the businesses alias
-// and returns the document ID Elasticsearch assigned to it.
+// and returns the document ID Elasticsearch assigned to it. The phone number
+// is normalized to digits-only before indexing, and its last 7 digits are
+// additionally stored under phone_number_local — see SearchFuzzyBusiness.
 func (s *ElasticsearchStore) CreateBusiness(ctx context.Context, b model.Business) (string, error) {
-	body, err := json.Marshal(b)
+	b.PhoneNumber = phone.Normalize(b.PhoneNumber)
+
+	doc := struct {
+		model.Business
+		PhoneNumberLocal string `json:"phone_number_local,omitempty"`
+	}{
+		Business:         b,
+		PhoneNumberLocal: phone.Local(b.PhoneNumber),
+	}
+
+	body, err := json.Marshal(doc)
 	if err != nil {
 		return "", fmt.Errorf("encoding business: %w", err)
 	}
@@ -165,7 +184,7 @@ func (s *ElasticsearchStore) SearchExactBusiness(ctx context.Context, req model.
 	addFilter("address.city", req.Address.City)
 	addFilter("address.state", req.Address.State)
 	addFilter("address.zip", req.Address.Zip)
-	addFilter("phone_number", req.PhoneNumber)
+	addFilter("phone_number", phone.Normalize(req.PhoneNumber))
 
 	body := map[string]interface{}{
 		"query": map[string]interface{}{
@@ -190,8 +209,13 @@ func (s *ElasticsearchStore) SearchExactBusiness(ctx context.Context, req model.
 // SearchFuzzyBusiness ranks businesses by how well they match whatever
 // fields the caller provided in req, tolerating typos on the analyzed text
 // fields (name, display_name, address.street) via fuzziness, treating the
-// keyword-only fields (city/state/zip/phone_number) as exact-or-nothing
-// signals, and boosting results near req.Location if it was provided.
+// keyword-only fields (city/state/zip) as exact-or-nothing signals, and
+// boosting results near req.Location if it was provided. Phone numbers are
+// compared on their last 7 digits (phone_number_local) rather than the
+// full number — that tolerates format differences and heavily boosts the
+// score when it matches, since a shared area code alone (common to many
+// unrelated businesses in the same region) isn't a meaningful signal on
+// its own and is deliberately not scored at all.
 func (s *ElasticsearchStore) SearchFuzzyBusiness(ctx context.Context, req model.MatchRequest) ([]BusinessHit, error) {
 	var should []map[string]interface{}
 
@@ -221,7 +245,17 @@ func (s *ElasticsearchStore) SearchFuzzyBusiness(ctx context.Context, req model.
 	addTerm("address.city", req.Address.City)
 	addTerm("address.state", req.Address.State)
 	addTerm("address.zip", req.Address.Zip)
-	addTerm("phone_number", req.PhoneNumber)
+
+	if local := phone.Local(phone.Normalize(req.PhoneNumber)); local != "" {
+		should = append(should, map[string]interface{}{
+			"term": map[string]interface{}{
+				"phone_number_local": map[string]interface{}{
+					"value": local,
+					"boost": phoneLocalBoost,
+				},
+			},
+		})
+	}
 
 	if req.Location != nil {
 		should = append(should, map[string]interface{}{
