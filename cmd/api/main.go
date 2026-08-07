@@ -6,6 +6,7 @@ import (
 
 	"geoelastic/internal/config"
 	"geoelastic/internal/handler"
+	"geoelastic/internal/middleware"
 	"geoelastic/internal/service"
 	"geoelastic/internal/store"
 )
@@ -22,13 +23,18 @@ func main() {
 	}
 
 	matcher := &service.BusinessMatcher{Store: es}
+	creator := &service.BusinessCreator{Store: es}
+	auth := &service.Authenticator{Store: es}
 
 	mux := http.NewServeMux()
 	mux.Handle("GET /health", &handler.HealthHandler{Store: es})
-	mux.Handle("GET /businesses", &handler.GetAllBusinessesHandler{Store: es})
-	mux.Handle("POST /businesses", &handler.CreateBusinessHandler{Store: es})
-	mux.Handle("GET /business/{id}", &handler.GetBusinessByIDHandler{Store: es})
-	mux.Handle("POST /businesses/match", &handler.MatchHandler{Matcher: matcher})
+	mux.Handle("POST /users", &handler.RegisterUserHandler{Auth: auth})
+	mux.Handle("POST /tokens", &handler.IssueTokenHandler{Auth: auth})
+
+	mux.Handle("GET /businesses", middleware.RequireAuth(auth, &handler.GetAllBusinessesHandler{Store: es}))
+	mux.Handle("POST /businesses", middleware.RequireAuth(auth, &handler.CreateBusinessHandler{Creator: creator}))
+	mux.Handle("GET /business/{id}", middleware.RequireAuth(auth, &handler.GetBusinessByIDHandler{Store: es}))
+	mux.Handle("POST /businesses/match", middleware.RequireAuth(auth, &handler.MatchHandler{Matcher: matcher}))
 
 	addr := ":" + cfg.ServerPort
 	log.Printf("listening on %s", addr)

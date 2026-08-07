@@ -19,9 +19,17 @@ func main() {
 		log.Fatalf("connecting to elasticsearch: %v", err)
 	}
 
-	if err := es.EnsureBusinessIndex(context.Background()); err != nil {
+	ctx := context.Background()
+
+	if err := es.EnsureBusinessIndex(ctx); err != nil {
 		log.Fatalf("ensuring business index: %v", err)
 	}
+	if err := es.EnsureUserIndex(ctx); err != nil {
+		log.Fatalf("ensuring user index: %v", err)
+	}
+	if err := es.EnsureTokenIndex(ctx); err != nil {
+		log.Fatalf("ensuring token index: %v", err)
+	}
 
-	log.Println("businesses index and alias are up to date")
+	log.Println("businesses, users, and tokens indices and aliases are up to date")
 }

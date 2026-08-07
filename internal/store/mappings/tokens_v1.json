@@ -1,0 +1,11 @@
+{
+  "mappings": {
+    "properties": {
+      "user_id": { "type": "keyword" },
+      "token_hash": { "type": "keyword" },
+      "created_at": { "type": "date" },
+      "expires_at": { "type": "date" },
+      "revoked_at": { "type": "date" }
+    }
+  }
+}

@@ -190,11 +190,11 @@ func main() {
 	for i := 0; i < seedCount; i++ {
 		business := randomBusiness()
 
-		id, err := es.CreateBusiness(ctx, business)
+		created, err := es.CreateBusiness(ctx, business)
 		if err != nil {
 			log.Fatalf("seeding business %d: %v", i, err)
 		}
 
-		fmt.Printf("created %q (%s)\n", business.Name, id)
+		fmt.Printf("created %q (%s)\n", created.Name, created.ID)
 	}
 }

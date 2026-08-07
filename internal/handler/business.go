@@ -2,9 +2,11 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"geoelastic/internal/model"
+	"geoelastic/internal/service"
 	"geoelastic/internal/store"
 )
 
@@ -57,9 +59,12 @@ func (h *GetBusinessByIDHandler) ServeHTTP(w http.ResponseWriter, r *http.Reques
 }
 
 type CreateBusinessHandler struct {
-	Store *store.ElasticsearchStore
+	Creator *service.BusinessCreator
 }
 
+// ServeHTTP creates the submitted business, unless one with the same name,
+// full address, and phone number already exists — in which case it returns
+// that existing business instead of creating a duplicate.
 func (h *CreateBusinessHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -71,14 +76,21 @@ func (h *CreateBusinessHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 	}
 	business.ID = "" // the ID is always Elasticsearch-assigned; ignore any client-supplied value
 
-	id, err := h.Store.CreateBusiness(r.Context(), business)
+	result, err := h.Creator.Create(r.Context(), business)
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
+		if errors.Is(err, service.ErrIncompleteBusiness) {
+			w.WriteHeader(http.StatusBadRequest)
+		} else {
+			w.WriteHeader(http.StatusInternalServerError)
+		}
 		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
 	}
 
-	business.ID = id
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(business)
+	if result.Created {
+		w.WriteHeader(http.StatusCreated)
+	} else {
+		w.WriteHeader(http.StatusOK)
+	}
+	json.NewEncoder(w).Encode(result.Business)
 }

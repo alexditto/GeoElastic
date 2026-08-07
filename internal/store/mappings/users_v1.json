@@ -1,0 +1,9 @@
+{
+  "mappings": {
+    "properties": {
+      "username": { "type": "keyword" },
+      "password_hash": { "type": "keyword" },
+      "created_at": { "type": "date" }
+    }
+  }
+}

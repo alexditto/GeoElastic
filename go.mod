@@ -5,6 +5,7 @@ go 1.26.5
 require (
 	github.com/elastic/go-elasticsearch/v9 v9.5.0
 	github.com/joho/godotenv v1.5.1
+	golang.org/x/crypto v0.54.0
 )
 
 require (

@@ -3,12 +3,21 @@ package store
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
+	"strings"
 
 	"geoelastic/internal/model"
 	"geoelastic/internal/phone"
 )
+
+// ErrDuplicateBusiness is returned by CreateBusiness when a business with
+// the same name, full address, and phone number already exists.
+var ErrDuplicateBusiness = errors.New("business with this name, address, and phone number already exists")
 
 const (
 	exactSearchSize = 10 // enough to detect "more than one" without a real page size
@@ -119,10 +128,24 @@ func (s *ElasticsearchStore) GetBusinessByID(ctx context.Context, id string) (*m
 }
 
 // CreateBusiness indexes a new business document into the businesses alias
-// and returns the document ID Elasticsearch assigned to it. The phone number
-// is normalized to digits-only before indexing, and its last 7 digits are
-// additionally stored under phone_number_local — see SearchFuzzyBusiness.
-func (s *ElasticsearchStore) CreateBusiness(ctx context.Context, b model.Business) (string, error) {
+// and returns it as actually persisted — notably with PhoneNumber
+// normalized to digits-only, since callers comparing their request to the
+// response should see what's really in the index, not what they sent. Its
+// last 7 digits are additionally stored under phone_number_local — see
+// SearchFuzzyBusiness.
+//
+// The document is keyed by businessDedupeKey(b) — a hash of name, full
+// address, and phone number — with op_type "create", so a business already
+// existing with that identity is rejected atomically by Elasticsearch
+// (ErrDuplicateBusiness, with the existing business returned alongside it)
+// rather than by a separate search-then-create check, which would race
+// against near-real-time search visibility (the same class of bug fixed
+// for usernames — see store.CreateUser). Callers are expected to have
+// already validated that b has a name, full address, and phone number
+// (see service.ErrIncompleteBusiness); CreateBusiness doesn't re-check,
+// since it only affects how good the dedupe key is, not correctness of the
+// write itself.
+func (s *ElasticsearchStore) CreateBusiness(ctx context.Context, b model.Business) (model.Business, error) {
 	b.PhoneNumber = phone.Normalize(b.PhoneNumber)
 
 	doc := struct {
@@ -135,31 +158,63 @@ func (s *ElasticsearchStore) CreateBusiness(ctx context.Context, b model.Busines
 
 	body, err := json.Marshal(doc)
 	if err != nil {
-		return "", fmt.Errorf("encoding business: %w", err)
+		return model.Business{}, fmt.Errorf("encoding business: %w", err)
 	}
+
+	docID := businessDedupeKey(b)
 
 	res, err := s.client.Index(
 		businessAlias,
 		bytes.NewReader(body),
+		s.client.Index.WithDocumentID(docID),
+		s.client.Index.WithOpType("create"),
 		s.client.Index.WithContext(ctx),
 	)
 	if err != nil {
-		return "", fmt.Errorf("indexing business: %w", err)
+		return model.Business{}, fmt.Errorf("indexing business: %w", err)
 	}
 	defer res.Body.Close()
 
+	if res.StatusCode == http.StatusConflict {
+		existing, getErr := s.GetBusinessByID(ctx, docID)
+		if getErr != nil {
+			return model.Business{}, fmt.Errorf("fetching existing business: %w", getErr)
+		}
+		if existing == nil {
+			return model.Business{}, fmt.Errorf("business %q reported as a duplicate but wasn't found", docID)
+		}
+		return *existing, ErrDuplicateBusiness
+	}
 	if res.IsError() {
-		return "", fmt.Errorf("indexing business: %s", res.Status())
+		return model.Business{}, fmt.Errorf("indexing business: %s", res.Status())
 	}
 
 	var indexed struct {
 		ID string `json:"_id"`
 	}
 	if err := json.NewDecoder(res.Body).Decode(&indexed); err != nil {
-		return "", fmt.Errorf("decoding index response: %w", err)
+		return model.Business{}, fmt.Errorf("decoding index response: %w", err)
 	}
 
-	return indexed.ID, nil
+	b.ID = indexed.ID
+	return b, nil
+}
+
+// businessDedupeKey deterministically identifies a business by name, full
+// address, and phone number (normalized) — the fields BusinessCreator
+// requires every business to carry. Two businesses with the same values
+// for these fields hash to the same key and therefore the same document
+// ID, which is what makes CreateBusiness's uniqueness check atomic.
+func businessDedupeKey(b model.Business) string {
+	sum := sha256.Sum256([]byte(strings.Join([]string{
+		b.Name,
+		b.Address.Street,
+		b.Address.City,
+		b.Address.State,
+		b.Address.Zip,
+		phone.Normalize(b.PhoneNumber),
+	}, "\x1f")))
+	return hex.EncodeToString(sum[:])
 }
 
 // SearchExactBusiness looks for businesses matching every field the caller
