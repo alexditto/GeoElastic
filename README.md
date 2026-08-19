@@ -9,11 +9,6 @@ is a reusable building block for cross-referencing and de-duplicating business r
 in two different systems, where the same business might be recorded with slightly different
 spellings, formatting, or partial information in each.
 
-It's also a personal project for learning Go and Elasticsearch from a MySQL/Laravel background,
-so the implementation deliberately stays idiomatic to each rather than porting over
-framework-style patterns that Go and Elasticsearch don't really have (no ORM, no Active Record,
-no built-in migrations — see `CLAUDE.md` for the details on those tradeoffs).
-
 Authentication is an opaque, Sanctum-style bearer token: register a user, exchange credentials
 for a token via `POST /tokens`, then send that token as `Authorization: Bearer <token>` on every
 `/businesses*` request. Tokens are stored hashed (SHA-256) in their own Elasticsearch index, not
